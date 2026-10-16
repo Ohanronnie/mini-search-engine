@@ -1,0 +1,9 @@
+[package]
+name = "search-test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rust-stemmers = "1.2.0"
+walkdir = "2.5.0"
+xml = "1.4.0"
