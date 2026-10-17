@@ -2,12 +2,17 @@ use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{BufReader, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use rust_stemmers::Stemmer;
 use walkdir::WalkDir;
 use xml::reader::{EventReader, XmlEvent};
+
+use crate::{index::Indexer, rank::Ranker};
+mod index;
+mod rank;
+mod tokenizer;
 
 #[derive(Debug, Default)]
 struct Document {
@@ -207,7 +212,6 @@ fn search(
     average_dl: f64,
     index: &HashMap<String, Vec<(usize, usize)>>,
 ) -> Result<Vec<(String, f64)>, Box<dyn std::error::Error>> {
-
     let tokens = tokenize_text(word);
 
     let mut scores = HashMap::new();
@@ -222,8 +226,11 @@ fn search(
                 };
 
                 let bm = calculate_bm25(idf, tf as f64, document.tokens_length as f64, average_dl);
-                let title_boost = tokens.iter().filter(|v| document.title_tokenized.contains(v)).count() as f64;
-             
+                let title_boost = tokens
+                    .iter()
+                    .filter(|v| document.title_tokenized.contains(v))
+                    .count() as f64;
+
                 *scores.entry(document.id).or_default() += bm + title_boost;
             }
         }
@@ -254,31 +261,46 @@ fn accept_input() -> std::io::Result<String> {
     Ok(input.trim().to_string())
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut documents: Vec<Document> = Vec::new();
-    let walker = WalkDir::new("wiki/extracted");
-    for entry in walker {
-        let entry = entry?;
-
-        if entry.file_type().is_file() {
-           let _doc = parse_document(entry.path().to_path_buf())?;
-           documents.extend(_doc);
+    let mut indexer = Indexer::new();
+    indexer.index(Path::new("wiki/extracted"))?;
+    let ranker = Ranker::new(
+        indexer.index,
+        indexer.documents,
+        indexer.average_document_len,
+    );
+    loop {
+        let input = ranker.accept_input()?;
+        if let Ok(result) = ranker.search(&input) {
+            println!("{result:?}");
+        } else {
+            println!("not found")
         }
     }
-//    let documents = parse_document("wiki/extracted/AA/wiki_00".into())?;
-    let tokenized_documents: Vec<DocumentTokens> = documents.iter().map(|v| tokenize(v)).collect();
-    drop(documents);
-    let inverted_index = build_inverted_index(&tokenized_documents);
-    let average_dl = calculate_average_document_length(&tokenized_documents);
-    loop {
-        let input = accept_input()?;
-        let result = search(
-            &input.trim(),
-            &tokenized_documents,
-            average_dl,
-            &inverted_index,
-        )?;
-        println!("{result:?}");
-    }
+    // let mut documents: Vec<Document> = Vec::new();
+    // let walker = WalkDir::new("wiki/extracted");
+    // for entry in walker {
+    //     let entry = entry?;
+
+    //     if entry.file_type().is_file() {
+    //         let _doc = parse_document(entry.path().to_path_buf())?;
+    //         documents.extend(_doc);
+    //     }
+    // }
+    // //    let documents = parse_document("wiki/extracted/AA/wiki_00".into())?;
+    // let tokenized_documents: Vec<DocumentTokens> = documents.iter().map(|v| tokenize(v)).collect();
+    // drop(documents);
+    // let inverted_index = build_inverted_index(&tokenized_documents);
+    // let average_dl = calculate_average_document_length(&tokenized_documents);
+    // loop {
+    //     let input = accept_input()?;
+    //     let result = search(
+    //         &input.trim(),
+    //         &tokenized_documents,
+    //         average_dl,
+    //         &inverted_index,
+    //     )?;
+    //     println!("{result:?}");
+    // }
 
     Ok(())
 }
